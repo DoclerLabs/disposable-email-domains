@@ -14,9 +14,18 @@ function isValidDomain(domain) {
     return domainRegex.test(domain);
 }
 
-function showMessage(message, type) {
+function escapeHtml(unsafe) {
+    return unsafe
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function showMessage(html, type) {
     const messageDiv = document.getElementById('result');
-    messageDiv.innerHTML = message;
+    messageDiv.innerHTML = html;
     messageDiv.className = 'alert ' + type;
 }
 
@@ -58,7 +67,7 @@ async function processDomain(input) {
 
     // Validate the cleaned domain
     if (!isValidDomain(cleanedInput)) {
-        showMessage(`Domain ${cleanedInput} is not valid.`, 'error');
+        showMessage(`Domain ${escapeHtml(cleanedInput)} is not valid.`, 'error');
         return null, null;
     }
 
@@ -75,28 +84,37 @@ async function processDomain(input) {
 
     // Look up the SHA-1 hash in the JSON data
     if (!jsonData[sha1Hash]) {
-        showMessage(`Domain ${cleanedInput} is not listed.`, 'success');
+        showMessage(`Domain ${escapeHtml(cleanedInput)} is not listed.`, 'success');
     }
 
     return jsonData[sha1Hash];
 }
 
-document.getElementById('lookup-form').addEventListener('submit', function (event) {
-    event.preventDefault(); // Prevent form submission
-
-    const domainInput = document.getElementById('domain').value;
-
+function lookup(domainInput) {
     processDomain(domainInput).then((data) => {
         if (!data) {
             return;
         }
-        let msg = `<h1>Domain ${data.domain} ${data.strict ? 'is on <a href="https://github.com/disposable/disposable?tab=readme-ov-file#strict-mode" target="_blank">strict mode list</a>' : 'is listed'}!</h1><p><h2>Sources:</h2><ul>`;
+
+        if (data.whitelist) {
+            showMessage(`Domain ${escapeHtml(data.domain)} is excluded by <a href="https://github.com/disposable/disposable/blob/master/whitelist.txt" target="_blank">whitelist</a>.`, 'success');
+            return;
+        }
+
+        let msg = `<h1>Domain ${data.domain} ${data.strict ? 'is on <a href="https://github.com/disposable/disposable?tab=readme-ov-file#strict-mode" target="_blank">strict mode list</a>' :
+                 'is listed'}!</h1><p><h2>Sources:</h2><ul>`;
+        let has_external = false;
         for (let i = 0; i < data.src.length; i++) {
             const entry = data.src[i],
                 external = entry['ext'];
             let url = entry['url'],
                 link = url,
+                issue_link = null,
                 is_github = false;
+
+            if (external) {
+                has_external = true;
+            }
 
             if (url.startsWith('https://raw.githubusercontent.com/')) {
                 // reformat link to github repository page in https://github.com/<user>/<repo>/blob/<branch>/<filepath>
@@ -113,11 +131,36 @@ document.getElementById('lookup-form').addEventListener('submit', function (even
 
                 is_github = true;
                 link = `https://github.com/${user}/${repo}/blob/${branch}/${file}`;
+                issue_link = `https://github.com/${user}/${repo}/issues/new`;
                 url = url.replace('https://raw.githubusercontent.com/', '');
             }
-            msg += `<li><a href="${link}" target="_blank" ${is_github ? 'class="github-link"' : ''}>${url}</a>${external ? ' (external)' : ''}</li>`;
+            msg += `<li><a href="${link}" target="_blank" ${is_github ? 'class="github-link"' : ''}>${url}</a>${external && !is_github ? ' (external)' : ''}
+                ${issue_link ? ' (false positive? <a href="' + issue_link + '" target="_blank">create issue</a>)' : ''}</li>`;
         }
         msg += '</ul></p>';
+
+        if (!has_external) {
+            // add link to create false-positive issue on main repository
+            msg += `<p>This domain was added from the <a href="https://github.com/disposable/disposable-email-domains" target="_blank">official repository</a>.
+If you believe this domain is incorrectly listed as disposable, please <a href="https://github.com/disposable/disposable/issues/new?template=non-disposable-domain-listed.md" target="_blank">report it as a false positive</a>.</p>`;
+        } else {
+            // show message that issue creation for external sources is not possible
+            msg += `<p>This domain was sourced from an external provider. As we do not manage external sources, we are unable to handle false-positive reports for these. Please contact the source directly for any inquiries.</p>`;
+        }
+
         showMessage(msg, 'info');
     });
+}
+
+document.getElementById('lookup-form').addEventListener('submit', function (event) {
+    event.preventDefault();
+    const domainInput = document.getElementById('domain').value;
+    lookup(domainInput);
 });
+
+// check if domain query parameter is given, set as value of input and submit
+const domain = new URLSearchParams(window.location.search).get('domain');
+if (domain) {
+    document.getElementById('domain').value = domain;
+    lookup(domain);
+}
