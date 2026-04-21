@@ -4,9 +4,12 @@ permissions:
   pull-requests: write
 
 on:
+  schedule:
+    - cron: '0 3 * * *'  # Run daily at 3 AM UTC
   push:
     branches:
       - master
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   build-cache:
