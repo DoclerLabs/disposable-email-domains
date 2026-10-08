@@ -11,6 +11,10 @@ on:
       - master
   workflow_dispatch:  # Allow manual trigger
 
+concurrency:
+  group: deploy-cache
+  cancel-in-progress: true
+
 jobs:
   build-cache:
     runs-on: ubuntu-latest
@@ -29,6 +33,14 @@ jobs:
 
     - name: Set up uv
       uses: astral-sh/setup-uv@v4
+
+    - name: Update disposable submodule to latest master
+      # The recorded submodule pointer is only bumped by update.sh commits;
+      # a fresh recursive checkout would otherwise build the cache against a
+      # months-old whitelist.txt/generator.
+      run: |
+        git -C disposable fetch origin
+        git -C disposable checkout origin/master
 
     - name: Sync disposable dependencies
       run: |
